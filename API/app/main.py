@@ -40,9 +40,9 @@ def create_app() -> FastAPI:
         title="Anchor API",
         description="AI-powered proactive recovery and prevention platform backend",
         version="1.0.0",
-        openapi_url=f"{settings.api_v1_prefix}/openapi.json",
-        docs_url=f"{settings.api_v1_prefix}/docs",
-        redoc_url=f"{settings.api_v1_prefix}/redoc",
+        openapi_url="/openapi.json",
+        docs_url="/docs",
+        redoc_url="/redoc",
         lifespan=lifespan,
     )
 
@@ -61,8 +61,10 @@ def create_app() -> FastAPI:
     # ── Register Exception Handlers ─────────────────────────────
     register_exception_handlers(app)
 
-    # ── Mount API Routers ───────────────────────────────────────
-    app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
+    # ── Mount API Routers (Mount under /v1 and settings.api_v1_prefix for Nginx rewrite compatibility) ──
+    app.include_router(api_v1_router, prefix="/v1")
+    if settings.api_v1_prefix and settings.api_v1_prefix != "/v1":
+        app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
     return app
 
