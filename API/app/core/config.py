@@ -51,10 +51,22 @@ class Settings(BaseSettings):
     # ── LLM Provider ─────────────────────────────────────────────
     llm_provider: str = Field(default="gemini")
     gemini_api_key: str = Field(default="REPLACE_WITH_PROVIDER_KEY")
-    llm_model: str = Field(default="REPLACE_WITH_MODEL_NAME")
-    llm_classifier_model: str = Field(default="REPLACE_WITH_FAST_MODEL_NAME")
+    gemini_api_key_1: str | None = Field(default=None)
+    gemini_api_key_2: str | None = Field(default=None)
+    gemini_api_key_3: str | None = Field(default=None)
+    llm_model: str = Field(default="gemini-2.0-flash")
+    llm_classifier_model: str = Field(default="gemini-2.0-flash-lite")
     llm_timeout_seconds: int = Field(default=30, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
+
+    @property
+    def gemini_api_keys_list(self) -> list[str]:
+        keys = []
+        for attr in ["gemini_api_key_1", "gemini_api_key_2", "gemini_api_key_3", "gemini_api_key"]:
+            val = getattr(self, attr, None)
+            if val and val not in ("REPLACE_WITH_PROVIDER_KEY", "PASTE_YOUR_GOOGLE_GEMINI_API_KEY_HERE", ""):
+                keys.append(val)
+        return keys
 
     # ── RAG / Knowledge base ─────────────────────────────────────
     rag_top_k: int = Field(default=4, ge=1)

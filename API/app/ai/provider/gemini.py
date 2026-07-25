@@ -69,9 +69,14 @@ class GeminiProvider(LLMProvider):
     ) -> dict[str, Any]:
         """
         Generate completion using the real Google Gemini API.
-        No hardcoded fallbacks — if the key is missing, returns an actionable error.
+        Enforces key rotation on rate limits (429 errors).
         """
-        if not self._is_key_configured():
+        api_keys = settings.gemini_api_keys_list
+        if not api_keys:
+            if self.api_key and self.api_key not in ("REPLACE_WITH_PROVIDER_KEY", "PASTE_YOUR_GOOGLE_GEMINI_API_KEY_HERE", ""):
+                api_keys = [self.api_key]
+
+        if not api_keys:
             logger.error("gemini_api_key_not_configured")
             return {
                 "text": (
@@ -83,8 +88,6 @@ class GeminiProvider(LLMProvider):
                 "tool_calls": [],
                 "resources": [],
             }
-
-        url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
 
         payload = {
             "contents": [
@@ -106,69 +109,64 @@ class GeminiProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=float(self.timeout)) as client:
-                models_to_try = [
-                    self.model_name,
-                    "gemini-2.0-flash-lite"
-                ]
-                # Remove duplicates while preserving order
+                models_to_try = []
+                if self.model_name and not self.model_name.startswith("REPLACE_"):
+                    models_to_try.append(self.model_name)
+                
+                models_to_try.extend(["gemini-2.0-flash", "gemini-2.0-flash-lite"])
                 seen = set()
                 models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
 
                 last_error = ""
                 for model in models_to_try:
-                    attempt_url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
-                    for attempt in range(3):
-                        response = await client.post(attempt_url, json=payload)
-                        if response.status_code == 200:
-                            data = response.json()
-                            candidates = data.get("candidates", [])
-                            if not candidates:
-                                logger.warning("gemini_empty_candidates", model=model)
-                                last_error = "The AI model returned an empty response. Please try rephrasing your question."
+                    for key in api_keys:
+                        attempt_url = f"{self.base_url}/models/{model}:generateContent?key={key}"
+                        for attempt in range(2):
+                            response = await client.post(attempt_url, json=payload)
+                            if response.status_code == 200:
+                                data = response.json()
+                                candidates = data.get("candidates", [])
+                                if not candidates:
+                                    logger.warning("gemini_empty_candidates", model=model)
+                                    last_error = "The AI model returned an empty response. Please try rephrasing your question."
+                                    break
+
+                                text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                                resources = self._select_resources(prompt + " " + text)
+                                return {
+                                    "text": text,
+                                    "citations": [],
+                                    "tool_calls": [],
+                                    "resources": resources,
+                                }
+
+                            elif response.status_code == 429:
+                                logger.warning("gemini_rate_limited_trying_next_key", model=model, key_prefix=key[:8])
+                                break # Break attempt loop to rotate key immediately
+                            else:
+                                error_detail = response.text[:300] if response.text else "Unknown error"
+                                logger.error("gemini_api_error", status=response.status_code, model=model, body=error_detail)
+                                last_error = f"Gemini API returned status {response.status_code}."
                                 break
-
-                            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                            resources = self._select_resources(prompt + " " + text)
-                            return {
-                                "text": text,
-                                "citations": [],
-                                "tool_calls": [],
-                                "resources": resources,
-                            }
-
-                        elif response.status_code == 429:
-                            wait_secs = (attempt + 1) * 2  # 2s, 4s, 6s backoff
-                            logger.warning("gemini_rate_limited_retrying", model=model, attempt=attempt + 1, wait=wait_secs)
-                            import asyncio
-                            await asyncio.sleep(wait_secs)
-                            continue
                         else:
-                            error_detail = response.text[:300] if response.text else "Unknown error"
-                            logger.error("gemini_api_error", status=response.status_code, model=model, body=error_detail)
-                            last_error = f"Gemini API returned status {response.status_code}."
-                            break
+                            continue
+                        break
                     else:
-                        # All retries exhausted for this model
-                        last_error = "Rate limit exceeded after retries. Please wait a moment and try again."
-                        continue  # Try next model
+                        continue
+                    break
 
                 return {
-                    "text": last_error or "Unable to generate a response. Please try again.",
+                    "text": last_error or "Rate limit exceeded on all configured keys. Please try again in a moment.",
                     "citations": [],
                     "tool_calls": [],
                     "resources": self._select_resources(prompt),
                 }
-
-
-
 
         except httpx.TimeoutException:
             logger.error("gemini_timeout")
             return {
                 "text": "The AI request timed out. Please try again.",
                 "citations": [],
-                "tool_calls": [],
-                "resources": [],
             }
         except Exception as err:
             logger.error("gemini_generate_exception", error=type(err).__name__, detail=str(err)[:200])
