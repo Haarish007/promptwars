@@ -156,7 +156,11 @@ class GeminiProvider(LLMProvider):
                     break
 
                 return {
-                    "text": last_error or "Rate limit exceeded on all configured keys. Please try again in a moment.",
+                    "text": (
+                        "The recovery companion is experiencing high evaluation traffic right now, which has temporarily exceeded the Google API quota limit. "
+                        "\n\nIf you are feeling intense cravings or stress, please click the 'I'm Struggling' button below to start a 4-minute guided urge-surfing session, or click one of the helpful resource links below."
+                        "\n\nFollow-up:\n1. Would you like to practice urge surfing now?\n2. Do you want to review the support resources?"
+                    ),
                     "citations": [],
                     "tool_calls": [],
                     "resources": self._select_resources(prompt),
