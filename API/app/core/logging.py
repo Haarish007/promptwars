@@ -4,6 +4,7 @@ Anchor — Structured JSON Logging & PII Scrubbing.
 Provides:
   - structlog JSON output with correlation ID tracking
   - PII Scrubbing Processor (redacts phone numbers, emails, notes, auth headers)
+  - CorrelationIdMiddleware for HTTP request correlation tracking
 """
 
 from __future__ import annotations
@@ -11,9 +12,14 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import uuid
 from contextvars import ContextVar
 from typing import Any, Dict
+
 import structlog
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 # ContextVar for request correlation ID
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -25,6 +31,17 @@ def set_correlation_id(cid: str) -> None:
 
 def get_correlation_id() -> str:
     return correlation_id_var.get()
+
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    """Middleware that injects or propagates X-Correlation-ID header."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        cid = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+        set_correlation_id(cid)
+        response = await call_next(request)
+        response.headers["X-Correlation-ID"] = cid
+        return response
 
 
 # ── PII Scrubbing Processor ──────────────────────────────────────────
