@@ -86,20 +86,23 @@ class GeminiProvider(LLMProvider):
 
         url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
 
-        contents = []
-        if system_prompt:
-            contents.append({"role": "user", "parts": [{"text": f"System Context:\n{system_prompt}"}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow all system rules and safety boundaries."}]})
-
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
-
         payload = {
-            "contents": contents,
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}]
+                }
+            ],
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens,
             },
         }
+
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
 
         try:
             async with httpx.AsyncClient(timeout=float(self.timeout)) as client:
