@@ -1,0 +1,38 @@
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+venv/
+*.so
+
+# ─── Node ───
+node_modules/
+dist/
+.cache/
+
+# ─── Environment ───
+.env
+!.env.example
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Logs ───
+*.log
+logs/
+
+# ─── Alembic ───
+# Keep versions tracked

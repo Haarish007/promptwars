@@ -1,0 +1,22 @@
+{
+  "region": "IN",
+  "resources": [
+    {
+      "name": "KIRAN Mental Health Helpline",
+      "phone": "1800-599-0019",
+      "description": "24/7 toll-free mental health helpline operated by the Ministry of Social Justice and Empowerment."
+    },
+    {
+      "name": "iCall Psychosocial Helpline",
+      "phone": "9152987821",
+      "url": "https://icallhelpline.org",
+      "description": "Psychosocial helpline run by TISS."
+    },
+    {
+      "name": "Vandrevala Foundation",
+      "phone": "+91 9999 666 555",
+      "url": "https://www.vandrevalafoundation.com",
+      "description": "24/7 mental health support and crisis helpline in India."
+    }
+  ]
+}

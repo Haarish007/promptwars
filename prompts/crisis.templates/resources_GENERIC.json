@@ -1,0 +1,14 @@
+{
+  "region": "GENERIC",
+  "resources": [
+    {
+      "name": "Emergency Services",
+      "description": "Please call your local emergency phone number immediately (e.g. 911, 112, 999)."
+    },
+    {
+      "name": "International Crisis Resources",
+      "url": "https://findahelpline.com",
+      "description": "Find a free, confidential crisis line in your country."
+    }
+  ]
+}

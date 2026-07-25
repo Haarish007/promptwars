@@ -1,0 +1,39 @@
+name: Anchor CI / Safety Gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test_and_safety_gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r API/requirements.txt
+
+      - name: Run Python compilation check
+        run: |
+          python -m py_compile API/app/main.py
+
+      - name: Run unit test suite & Red-Team Safety Gate
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          SECRET_KEY: test_secret_key_32_bytes_long_exact!
+          ENCRYPTION_KEY: g4J_2x9...  # Test dummy Fernet key
+        run: |
+          cd API
+          python -m unittest discover -s tests -p "test_*.py"
