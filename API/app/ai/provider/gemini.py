@@ -106,12 +106,9 @@ class GeminiProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=float(self.timeout)) as client:
-                # Try all available models to bypass potential rate limits or quota constraints
                 models_to_try = [
                     self.model_name,
-                    "gemini-2.0-flash-lite",
-                    "gemini-1.5-flash",
-                    "gemini-1.5-pro"
+                    "gemini-2.0-flash-lite"
                 ]
                 # Remove duplicates while preserving order
                 seen = set()
