@@ -23,12 +23,14 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8100, ge=1, le=65535)
     log_level: str = Field(default="info")
 
-    # ── CORS / Frontend ──────────────────────────────────────────
-    frontend_origin: str = Field(default="http://localhost:5173")
-    cors_allowed_origins: str = Field(default="http://localhost:5173")
+    # ── CORS / Frontend (Wildcard * allowed) ─────────────────────
+    frontend_origin: str = Field(default="*")
+    cors_allowed_origins: str = Field(default="*")
 
     @property
     def cors_origins_list(self) -> list[str]:
+        if not self.cors_allowed_origins or self.cors_allowed_origins.strip() == "*":
+            return ["*"]
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
 
     # ── Database (AWS RDS PostgreSQL) ────────────────────────────
@@ -71,8 +73,8 @@ class Settings(BaseSettings):
     nudge_max_per_day: int = Field(default=3, ge=0)
 
     # ── AWS ────────────────────────────────────────────────────────
-    s3_bucket: str = Field(default="your-frontend-bucket")
-    cloudfront_distribution_id: str = Field(default="REPLACE_ME")
+    s3_bucket: str = Field(default="pentagonp")
+    cloudfront_distribution_id: str = Field(default="d3oe15tpdv4npj.cloudfront.net")
     aws_region: str = Field(default="ap-south-1")
 
     @field_validator("log_level")
