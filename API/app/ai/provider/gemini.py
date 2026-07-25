@@ -27,6 +27,10 @@ RESOURCE_LINKS = {
     "988_lifeline": {"title": "988 Suicide & Crisis Lifeline", "url": "https://988lifeline.org/", "description": "24/7 crisis support"},
     "niaaa": {"title": "NIAAA Rethinking Drinking", "url": "https://www.rethinkingdrinking.niaaa.nih.gov/", "description": "NIH alcohol self-assessment tools"},
     "aa_meetings": {"title": "AA Meeting Finder", "url": "https://www.aa.org/find-aa", "description": "Find local AA meetings"},
+    "al_anon": {"title": "Al-Anon Family Groups", "url": "https://al-anon.org/", "description": "Support for family and friends of alcoholics"},
+    "nida": {"title": "NIDA Drug Use Info", "url": "https://nida.nih.gov/research-topics", "description": "NIH drug abuse research and resources"},
+    "secular_sobriety": {"title": "Secular Organizations for Sobriety", "url": "https://www.sossobriety.org/", "description": "Secular recovery community groups"},
+    "refuge_recovery": {"title": "Refuge Recovery", "url": "https://www.refugerecovery.org/", "description": "Buddhist-inspired recovery path"},
 }
 
 
@@ -50,11 +54,9 @@ class GeminiProvider(LLMProvider):
             return False
         if self.api_key in ("REPLACE_WITH_PROVIDER_KEY", ""):
             return False
-        # Must be a real Google key (starts with AIza)
-        if self.api_key.startswith("AIza"):
-            return True
         # Also accept other formats but warn
-        logger.warning("gemini_key_format_unexpected", key_prefix=self.api_key[:8])
+        if not self.api_key.startswith("AIza"):
+            logger.warning("gemini_key_format_unexpected", key_prefix=self.api_key[:8])
         return True
 
     async def generate(
@@ -73,7 +75,7 @@ class GeminiProvider(LLMProvider):
             logger.error("gemini_api_key_not_configured")
             return {
                 "text": (
-                    "⚠️ The Gemini API key is not configured. "
+                    "The Gemini API key is not configured. "
                     "Please set GEMINI_API_KEY in your .env file with a valid Google AI Studio key. "
                     "Get one free at: https://aistudio.google.com/apikey"
                 ),
@@ -101,11 +103,16 @@ class GeminiProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=float(self.timeout)) as client:
-                # Try with primary model, retry with fallback model on 429
-                models_to_try = [self.model_name]
-                fallback = settings.llm_classifier_model
-                if fallback and fallback != self.model_name:
-                    models_to_try.append(fallback)
+                # Try all available models to bypass potential rate limits or quota constraints
+                models_to_try = [
+                    self.model_name,
+                    "gemini-2.0-flash-lite",
+                    "gemini-1.5-flash",
+                    "gemini-1.5-pro"
+                ]
+                # Remove duplicates while preserving order
+                seen = set()
+                models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
 
                 last_error = ""
                 for model in models_to_try:
@@ -173,20 +180,52 @@ class GeminiProvider(LLMProvider):
             }
 
     def _select_resources(self, text: str) -> list[dict[str, str]]:
-        """Select relevant recovery resource links based on content."""
+        """Select relevant recovery resource links based on content keywords."""
         t = text.lower()
         resources = []
-        if any(w in t for w in ("alcohol", "drink", "substance", "addict", "recovery", "quit", "sober")):
+        
+        # Crisis / Distress
+        if any(w in t for w in ("crisis", "suicid", "harm", "emergency", "struggling", "overwhelm", "sos", "struggle", "help")):
+            resources.append(RESOURCE_LINKS["988_lifeline"])
+            
+        # Family / Caregivers
+        if any(w in t for w in ("family", "caregiver", "parent", "spouse", "friend", "guardian", "david")):
+            resources.append(RESOURCE_LINKS["al_anon"])
+
+        # Drug/Substance specific
+        if any(w in t for w in ("drug", "substance", "chemical", "medication", "pill", "opioid", "cocaine")):
+            resources.append(RESOURCE_LINKS["nida"])
             resources.append(RESOURCE_LINKS["samhsa"])
+
+        # Support groups / Meetings
+        if any(w in t for w in ("meeting", "group", "support", "community", "aa", "peer", "sobriety")):
+            resources.append(RESOURCE_LINKS["aa_meetings"])
+            resources.append(RESOURCE_LINKS["secular_sobriety"])
+
+        # Holistic / Mindfulness
+        if any(w in t for w in ("mindful", "meditat", "buddhi", "spirit", "calm", "relax", "yoga")):
+            resources.append(RESOURCE_LINKS["refuge_recovery"])
+
+        # Alcohol specific / General Recovery
+        if any(w in t for w in ("alcohol", "drink", "beer", "wine", "liquor", "crave", "craving", "urge")):
             resources.append(RESOURCE_LINKS["niaaa"])
             resources.append(RESOURCE_LINKS["smart_recovery"])
-        if any(w in t for w in ("crisis", "suicid", "harm", "emergency", "struggling", "overwhelm")):
-            resources.append(RESOURCE_LINKS["988_lifeline"])
-        if any(w in t for w in ("meeting", "group", "support", "community", "aa")):
-            resources.append(RESOURCE_LINKS["aa_meetings"])
+
+        # Fallback to general supportive links
         if not resources:
             resources.append(RESOURCE_LINKS["samhsa"])
-        return resources
+            resources.append(RESOURCE_LINKS["smart_recovery"])
+            
+        # Return unique items up to 3 links
+        unique_res = []
+        seen_urls = set()
+        for r in resources:
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
+                unique_res.append(r)
+                if len(unique_res) >= 3:
+                    break
+        return unique_res
 
     async def generate_stream(
         self,

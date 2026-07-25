@@ -20,6 +20,7 @@ interface ChatMessage {
   citations?: string[];
   resources?: Resource[];
   timestamp: string;
+  followUps?: string[];
 }
 
 // ── Login View ──────────────────────────────────────────────────────
@@ -342,12 +343,28 @@ const ChatView: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({ message: msg }),
       });
+
+      // Parse follow-up questions from response text
+      const parts = res.reply.split(/(?:Follow-up|Follow-ups|Questions):/i);
+      const mainText = parts[0].trim();
+      const followUpText = parts[1] || '';
+      const followUps: string[] = [];
+      if (followUpText) {
+        const matches = followUpText.match(/(?:\d+\.\s*|[•\-*]\s*)(.+)/g);
+        if (matches) {
+          matches.forEach((m: string) => {
+            followUps.push(m.replace(/^(?:\d+\.\s*|[•\-*]\s*)/, '').trim());
+          });
+        }
+      }
+
       const botMsg: ChatMessage = {
         sender: 'bot',
-        text: res.reply,
+        text: mainText,
         citations: res.citations || [],
         resources: res.resources || [],
         timestamp: new Date().toISOString(),
+        followUps: followUps.length > 0 ? followUps : undefined,
       };
       setMessages(prev => [...prev, botMsg]);
     } catch (err: any) {
@@ -392,7 +409,7 @@ const ChatView: React.FC = () => {
         )}
 
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-[90%] rounded-3xl p-4 text-sm leading-relaxed ${
               m.sender === 'user'
                 ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-br-sm'
@@ -422,6 +439,18 @@ const ChatView: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Follow-up Question Chips */}
+            {m.sender === 'bot' && m.followUps && m.followUps.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2 max-w-[90%] justify-start">
+                {m.followUps.map((q, qi) => (
+                  <button key={qi} onClick={() => sendMessage(q)}
+                    className="bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 text-sky-400 hover:text-sky-300 text-xs py-1.5 px-3 rounded-full transition text-left font-medium">
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
 
