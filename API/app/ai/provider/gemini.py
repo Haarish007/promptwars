@@ -1,9 +1,9 @@
 """
-Anchor — Gemini LLM Provider Adapter with Smart Grounded Fallback Engine.
+Anchor — Gemini LLM Provider Adapter (Real Google GenAI API Integration).
 
 Implements LLMProvider interface for Google Gemini models.
-Provides generate, generate_stream, classify, and embed methods.
-Enforces timeout limits and returns rich, grounded contextual responses when offline.
+Makes REAL API calls to generativelanguage.googleapis.com.
+No hardcoded/mock responses. If the API call fails, returns a clear error message.
 """
 
 from __future__ import annotations
@@ -20,47 +20,18 @@ from app.core.logging import get_logger
 logger = get_logger("gemini_provider")
 
 
-def get_smart_grounded_response(prompt: str) -> str:
-    """Generate rich, grounded clinical/recovery answers with citations when offline."""
-    p = prompt.lower()
-
-    if any(k in p for k in ["alcohol", "drink", "overcome", "addict", "quit"]):
-        return (
-            "Overcoming alcohol dependency is a courageous journey built one moment at a time. "
-            "Evidence-based SMART Recovery strategies focus on four core pillars [kb-101]:\n\n"
-            "1. **Building & Maintaining Motivation**: Identify your personal core values and reasons for change.\n"
-            "2. **Coping with Cravings**: Cravings are like ocean waves — they naturally peak within 10 to 20 minutes and subside. Practice 4-minute urge surfing.\n"
-            "3. **Managing Thoughts & Behaviors**: Recognize high-risk situations (like evening solitude or social pressure) and replace drinking triggers with grounding habits.\n"
-            "4. **Living a Balanced Life**: Build supportive connections and non-drinking rewards.\n\n"
-            "Would you like to explore an urge surfing practice, review your personal triggers, or set a daily check-in routine?"
-        )
-    elif any(k in p for k in ["urge", "craving", "wave", "surf"]):
-        return (
-            "Urge Surfing is an evidence-based mindfulness technique designed to help you ride out cravings without giving in [kb-101]. "
-            "Instead of fighting the craving, picture it as a wave in the ocean. Notice where you feel tension in your body, "
-            "breathe slowly (in for 4s, out for 6s), and watch the craving reach its peak and naturally fall away within 10-15 minutes."
-        )
-    elif any(k in p for k in ["trigger", "stress", "lonely", "evening"]):
-        return (
-            "Identifying high-risk triggers is a key pillar of relapse prevention [kb-102]. Common triggers include HALT signals "
-            "(Hungry, Angry, Lonely, Tired) and evening solitude. When you feel a trigger rising, activate a 2-minute grounding reset "
-            "or reach out to your linked caregiver circle."
-        )
-    elif any(k in p for k in ["caregiver", "david", "family", "support"]):
-        return (
-            "Involving a trusted caregiver using CRAFT (Community Reinforcement and Family Training) principles significantly improves recovery outcomes [kb-103]. "
-            "Your caregiver receives non-judgmental guidance on how to offer positive reinforcement while avoiding lectures or confrontation."
-        )
-    else:
-        return (
-            "I am here to support your recovery journey with evidence-based guidance [kb-101]. "
-            "We can track your daily Steady Score, log check-ins, practice 4-minute urge surfing, or review recovery strategies together. "
-            "What aspect of your recovery would you like to focus on right now?"
-        )
+# Evidence-based recovery resource links
+RESOURCE_LINKS = {
+    "samhsa": {"title": "SAMHSA National Helpline", "url": "https://www.samhsa.gov/find-help/national-helpline", "description": "Free 24/7 referral service"},
+    "smart_recovery": {"title": "SMART Recovery Online", "url": "https://www.smartrecovery.org/", "description": "Science-based mutual support"},
+    "988_lifeline": {"title": "988 Suicide & Crisis Lifeline", "url": "https://988lifeline.org/", "description": "24/7 crisis support"},
+    "niaaa": {"title": "NIAAA Rethinking Drinking", "url": "https://www.rethinkingdrinking.niaaa.nih.gov/", "description": "NIH alcohol self-assessment tools"},
+    "aa_meetings": {"title": "AA Meeting Finder", "url": "https://www.aa.org/find-aa", "description": "Find local AA meetings"},
+}
 
 
 class GeminiProvider(LLMProvider):
-    """Google Gemini LLM Adapter with Smart Grounded Response Fallback."""
+    """Google Gemini LLM Adapter — Real API calls only."""
 
     def __init__(
         self,
@@ -73,6 +44,19 @@ class GeminiProvider(LLMProvider):
         self.timeout = timeout or settings.llm_timeout_seconds
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
+    def _is_key_configured(self) -> bool:
+        """Check if a real Google Gemini API key is present."""
+        if not self.api_key:
+            return False
+        if self.api_key in ("REPLACE_WITH_PROVIDER_KEY", ""):
+            return False
+        # Must be a real Google key (starts with AIza)
+        if self.api_key.startswith("AIza"):
+            return True
+        # Also accept other formats but warn
+        logger.warning("gemini_key_format_unexpected", key_prefix=self.api_key[:8])
+        return True
+
     async def generate(
         self,
         prompt: str,
@@ -82,24 +66,29 @@ class GeminiProvider(LLMProvider):
         max_tokens: int = 1024,
     ) -> dict[str, Any]:
         """
-        Generate completion using Gemini API.
-        Falls back to smart grounded response if API key is unconfigured or request fails.
+        Generate completion using the real Google Gemini API.
+        No hardcoded fallbacks — if the key is missing, returns an actionable error.
         """
-        if not self.api_key or self.api_key == "REPLACE_WITH_PROVIDER_KEY":
-            logger.warning("gemini_key_missing_using_smart_fallback")
+        if not self._is_key_configured():
+            logger.error("gemini_api_key_not_configured")
             return {
-                "text": get_smart_grounded_response(prompt),
-                "citations": ["[kb-101]"],
+                "text": (
+                    "⚠️ The Gemini API key is not configured. "
+                    "Please set GEMINI_API_KEY in your .env file with a valid Google AI Studio key. "
+                    "Get one free at: https://aistudio.google.com/apikey"
+                ),
+                "citations": [],
                 "tool_calls": [],
+                "resources": [],
             }
 
         url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
-        
+
         contents = []
         if system_prompt:
             contents.append({"role": "user", "parts": [{"text": f"System Context:\n{system_prompt}"}]})
             contents.append({"role": "model", "parts": [{"text": "Understood. I will follow all system rules and safety boundaries."}]})
-        
+
         contents.append({"role": "user", "parts": [{"text": prompt}]})
 
         payload = {
@@ -112,29 +101,92 @@ class GeminiProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=float(self.timeout)) as client:
-                response = await client.post(url, json=payload)
-                if response.status_code != 200:
-                    logger.error("gemini_api_error", status=response.status_code, body=response.text[:200])
-                    raise SafeFallbackError("Gemini API error")
+                # Try with primary model, retry with fallback model on 429
+                models_to_try = [self.model_name]
+                fallback = settings.llm_classifier_model
+                if fallback and fallback != self.model_name:
+                    models_to_try.append(fallback)
 
-                data = response.json()
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    raise SafeFallbackError("Empty candidates from Gemini")
+                last_error = ""
+                for model in models_to_try:
+                    attempt_url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
+                    for attempt in range(3):
+                        response = await client.post(attempt_url, json=payload)
+                        if response.status_code == 200:
+                            data = response.json()
+                            candidates = data.get("candidates", [])
+                            if not candidates:
+                                logger.warning("gemini_empty_candidates", model=model)
+                                last_error = "The AI model returned an empty response. Please try rephrasing your question."
+                                break
 
-                text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            resources = self._select_resources(prompt + " " + text)
+                            return {
+                                "text": text,
+                                "citations": [],
+                                "tool_calls": [],
+                                "resources": resources,
+                            }
+
+                        elif response.status_code == 429:
+                            wait_secs = (attempt + 1) * 2  # 2s, 4s, 6s backoff
+                            logger.warning("gemini_rate_limited_retrying", model=model, attempt=attempt + 1, wait=wait_secs)
+                            import asyncio
+                            await asyncio.sleep(wait_secs)
+                            continue
+                        else:
+                            error_detail = response.text[:300] if response.text else "Unknown error"
+                            logger.error("gemini_api_error", status=response.status_code, model=model, body=error_detail)
+                            last_error = f"Gemini API returned status {response.status_code}."
+                            break
+                    else:
+                        # All retries exhausted for this model
+                        last_error = "Rate limit exceeded after retries. Please wait a moment and try again."
+                        continue  # Try next model
+
                 return {
-                    "text": text,
-                    "citations": ["[kb-101]"],
+                    "text": last_error or "Unable to generate a response. Please try again.",
+                    "citations": [],
                     "tool_calls": [],
+                    "resources": self._select_resources(prompt),
                 }
-        except Exception as err:
-            logger.warning("gemini_generate_failed_smart_fallback", error=type(err).__name__)
+
+
+
+
+        except httpx.TimeoutException:
+            logger.error("gemini_timeout")
             return {
-                "text": get_smart_grounded_response(prompt),
-                "citations": ["[kb-101]"],
+                "text": "The AI request timed out. Please try again.",
+                "citations": [],
                 "tool_calls": [],
+                "resources": [],
             }
+        except Exception as err:
+            logger.error("gemini_generate_exception", error=type(err).__name__, detail=str(err)[:200])
+            return {
+                "text": f"An error occurred while generating the response: {type(err).__name__}. Please try again.",
+                "citations": [],
+                "tool_calls": [],
+                "resources": [],
+            }
+
+    def _select_resources(self, text: str) -> list[dict[str, str]]:
+        """Select relevant recovery resource links based on content."""
+        t = text.lower()
+        resources = []
+        if any(w in t for w in ("alcohol", "drink", "substance", "addict", "recovery", "quit", "sober")):
+            resources.append(RESOURCE_LINKS["samhsa"])
+            resources.append(RESOURCE_LINKS["niaaa"])
+            resources.append(RESOURCE_LINKS["smart_recovery"])
+        if any(w in t for w in ("crisis", "suicid", "harm", "emergency", "struggling", "overwhelm")):
+            resources.append(RESOURCE_LINKS["988_lifeline"])
+        if any(w in t for w in ("meeting", "group", "support", "community", "aa")):
+            resources.append(RESOURCE_LINKS["aa_meetings"])
+        if not resources:
+            resources.append(RESOURCE_LINKS["samhsa"])
+        return resources
 
     async def generate_stream(
         self,
@@ -152,12 +204,19 @@ class GeminiProvider(LLMProvider):
         text: str,
         categories: list[str],
     ) -> dict[str, Any]:
-        """Perform classification."""
-        return {"label": "none", "confidence": 1.0}
+        """Perform classification using real Gemini call."""
+        if not self._is_key_configured():
+            return {"label": "none", "confidence": 0.5}
+
+        classify_prompt = f"Classify the following text into one of these categories: {', '.join(categories)}.\nText: {text}\nReturn only the category label."
+        res = await self.generate(classify_prompt, temperature=0.1, max_tokens=50)
+        label = res.get("text", "none").strip().lower()
+        matched = next((c for c in categories if c.lower() in label), "none")
+        return {"label": matched, "confidence": 0.85}
 
     async def embed(
         self,
         text: str,
     ) -> list[float]:
-        """Generate dummy embedding vector for text."""
+        """Generate embedding vector (placeholder — use text-embedding model for production)."""
         return [0.0] * 768

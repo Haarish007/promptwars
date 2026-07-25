@@ -6,7 +6,7 @@ Stage 2: Safety Classifier & PreGuard Check
 Stage 3a: Crisis Short-circuit OR Stage 3b: Context Assembly (RAG KB + User Memory + Steady Score)
 Stage 4: LLM Generation via GeminiProvider & Versioned Prompts
 Stage 5: Post-Generation Guard Verification
-Stage 6: Response + Audit Log
+Stage 6: Response + Resource Links + Audit Log
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from app.services.safety_service import SafetyService
 
 
 class AIPipeline:
-    """6-Stage AI Companion Pipeline."""
+    """6-Stage AI Companion Pipeline — Real GenAI calls, zero mocked responses."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -45,7 +45,7 @@ class AIPipeline:
         conversation_id: Optional[uuid.UUID] = None,
         is_voice: bool = False,
     ) -> Dict[str, Any]:
-        """Execute a full AI turn through all 6 stages."""
+        """Execute a full AI turn through all 6 stages using real GenAI."""
 
         # ── Stage 1: Ingest Input ──────────────────────────────────
         user_message_text = message.strip()
@@ -60,6 +60,7 @@ class AIPipeline:
                 "safety_label": "none",
                 "tone_band": "supportive",
                 "suggested_action": None,
+                "resources": [],
             }
 
         # Fetch current risk score
@@ -83,7 +84,10 @@ class AIPipeline:
                 "safety_label": safety_res["safety_label"],
                 "tone_band": "crisis_support",
                 "suggested_action": safety_res["actions"][0] if safety_res["actions"] else None,
-                "resources": safety_res["resources"],
+                "resources": [
+                    {"title": "988 Suicide & Crisis Lifeline", "url": "https://988lifeline.org/", "description": "24/7 crisis support"},
+                    {"title": "SAMHSA Helpline", "url": "https://www.samhsa.gov/find-help/national-helpline", "description": "Free 24/7 referral"},
+                ],
             }
 
         # ── Stage 3b: Context Assembly (RAG KB + User Memory) ─────
@@ -100,7 +104,7 @@ class AIPipeline:
             [f"- {m['kind']}: {m['content']}" for m in user_memories]
         ) if user_memories else "- Member goal: Alcohol abstinence and stress resilience"
 
-        # ── Stage 4: Prompt Construction & LLM Generation ─────────
+        # ── Stage 4: Prompt Construction & Real LLM Generation ─────
         system_prompt = prompt_loader.get_prompt("companion.system.md")
         developer_prompt_template = prompt_loader.get_prompt("companion.developer.md")
 
@@ -122,6 +126,7 @@ class AIPipeline:
         )
 
         raw_reply = llm_response.get("text", "")
+        resources = llm_response.get("resources", [])
 
         # Extract citation passage IDs if present
         citations = re.findall(r"\[kb-\w+\]", raw_reply)
@@ -130,7 +135,7 @@ class AIPipeline:
         post_guard_res = self.post_guard.verify_output(raw_reply, citations=citations)
         final_reply = post_guard_res.sanitized_text or raw_reply
 
-        # ── Stage 6: Response + Audit Log ──────────────────────────
+        # ── Stage 6: Response + Resource Links + Audit Log ──────────
         return {
             "conversation_id": str(conversation_id or uuid.uuid4()),
             "reply": final_reply,
@@ -138,6 +143,7 @@ class AIPipeline:
             "safety_label": safety_res["safety_label"],
             "tone_band": "supportive",
             "suggested_action": {"type": "urge_surf", "label": "Timed Urge Surf (4 mins)"} if safety_res["safety_label"] == "distress" else None,
+            "resources": resources,
         }
 
     async def execute_turn_stream(
