@@ -362,3 +362,10 @@ MIT License
 Empowering recovery through responsible Artificial Intelligence.
 
 RecoveryAI aims to make personalized recovery support more accessible, proactive, and human-centered by combining Generative AI with compassionate digital experiences.
+
+
+So you don't want git pull. Pulling would bring Bitbucket's changes into your server.
+
+Your previous push actually reached Bitbucket but was rejected because of the 100 MB file limit:
+
+Your push has been blocked because it includes at least one file that is 100 MB or larger.
