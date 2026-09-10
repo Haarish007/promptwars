@@ -47,6 +47,18 @@ _GROUP_LIMITS: dict[str, int] = {
 }
 
 
+def _client_ip(request: Request) -> str:
+    """Resolve the caller IP, preferring the first X-Forwarded-For hop."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first_hop = forwarded.split(",")[0].strip()
+        if first_hop:
+            return first_hop
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
 def rate_limit(group: str) -> Callable:
     """
     FastAPI dependency factory for rate limiting.
@@ -57,10 +69,7 @@ def rate_limit(group: str) -> Callable:
     max_requests = _GROUP_LIMITS.get(group, 60)  # default 60/min
 
     async def _check_rate_limit(request: Request) -> None:
-        # Use client IP as the key (X-Forwarded-For when behind Nginx)
-        client_ip = request.headers.get(
-            "x-forwarded-for", request.client.host if request.client else "unknown"
-        )
+        client_ip = _client_ip(request)
         key = (client_ip, group)
 
         if not _store.is_allowed(key, max_requests):
@@ -73,6 +82,7 @@ def rate_limit(group: str) -> Callable:
                         "correlation_id": get_correlation_id(),
                     }
                 },
+                headers={"Retry-After": "60"},
             )
 
     return _check_rate_limit
