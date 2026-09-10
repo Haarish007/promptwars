@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # ── App ──────────────────────────────────────────────────────
     app_env: str = Field(default="development", description="development | staging | production")
     app_name: str = Field(default="anchor")
+    app_version: str = Field(default="1.0.0")
     api_v1_prefix: str = Field(default="/promptwars/api/v1")
     backend_host: str = Field(default="127.0.0.1")
     backend_port: int = Field(default=8100, ge=1, le=65535)
