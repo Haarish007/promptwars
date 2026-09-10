@@ -10,9 +10,11 @@ reviews:
   review_details: true
   auto_review:
     enabled: true
+    auto_incremental_review: true
     drafts: false
     base_branches:
       - "master"
       - "main"
+      - ".*"
 chat:
   auto_reply: true
